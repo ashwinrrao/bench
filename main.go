@@ -21,27 +21,27 @@ var (
 func main() {
 
 	// get the first page of transactions
-	r, err := getTransactions(1)
+	pageOneResponse, err := getTransactions(1)
 	if err != nil {
 		fmt.Println("there was an error", err)
 		return
 	}
 
 	// formula to calculate the total number of pages
-	pages := int(math.Ceil(float64(r.TotalCount) / float64(len(r.Transactions))))
+	pages := int(math.Ceil(float64(pageOneResponse.TotalCount) / float64(len(pageOneResponse.Transactions))))
 
 	// get the remaining pages asynchronously
-	resp, err := getPagesAsync(pages)
+	responses, err := getPagesAsync(pages)
 	if err != nil {
 		fmt.Println("there was an error", err)
 		return
 	}
 
 	// append the transactions from the first page
-	resp = append(resp, r)
+	responses = append(responses, pageOneResponse)
 
 	// calculate the running sum in O(n) time
-	result := calcRunningSum(resp)
+	result := calcRunningSum(responses)
 
 	// print out the result
 	for key, val := range result {
@@ -50,28 +50,28 @@ func main() {
 }
 
 func getTransactions(pageNumber int) (Response, error) {
-	var r Response
+	var response Response
 
 	// perform the HTTP Get operation on the URL
-	resp, err := http.Get(fmt.Sprintf(URL, pageNumber))
+	httpResponse, err := http.Get(fmt.Sprintf(URL, pageNumber))
 
 	// if there was an error or if the status code is not 200, return an error
-	if err != nil || resp.StatusCode != http.StatusOK {
-		return r, errGet
+	if err != nil || httpResponse.StatusCode != http.StatusOK {
+		return response, errGet
 	}
-	defer resp.Body.Close()
+	defer httpResponse.Body.Close()
 
 	// decode the json body and catch any errors while decoding
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return r, errMalformedResponse
+	if err := json.NewDecoder(httpResponse.Body).Decode(&response); err != nil {
+		return response, errMalformedResponse
 	}
 
-	return r, nil
+	return response, nil
 }
 
 func getPagesAsync(pages int) ([]Response, error) {
 	var wg sync.WaitGroup
-	respChan := make(chan AsyncResponse)
+	responseChannel := make(chan AsyncResponse)
 	var err error
 
 	// loop through the second page to the last page
@@ -81,34 +81,34 @@ func getPagesAsync(pages int) ([]Response, error) {
 		go func(j int) {
 			defer wg.Done()
 			r, err := getTransactions(j)
-			respChan <- AsyncResponse{r: r, err: err}
+			responseChannel <- AsyncResponse{r: r, err: err}
 		}(i)
 	}
 
 	// close the channel once all the threads are finished
 	go func() {
 		wg.Wait()
-		close(respChan)
+		close(responseChannel)
 	}()
 
-	var r []Response
+	var result []Response
 	// collect all the responses from all the threads and add them to a list
-	for resp := range respChan {
-		r = append(r, resp.r)
-		if resp.err != nil {
-			err = resp.err
+	for response := range responseChannel {
+		result = append(result, response.r)
+		if response.err != nil {
+			err = response.err
 		}
 	}
 
-	return r, err
+	return result, err
 }
 
-func calcRunningSum(r []Response) map[string]float64 {
+func calcRunningSum(responses []Response) map[string]float64 {
 	result := map[string]float64{}
 	// loop through each transaction and update the running sum
-	for _, resp := range r {
-		for _, t := range resp.Transactions {
-			result[t.Date] += t.Amount
+	for _, response := range responses {
+		for _, transaction := range response.Transactions {
+			result[transaction.Date] += transaction.Amount
 		}
 	}
 	return result
